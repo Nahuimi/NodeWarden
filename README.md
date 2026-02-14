@@ -18,7 +18,7 @@ English：[`README_EN.md`](./README_EN.md)
 - ✅ 导入/导出功能
 - ✅ 网站图标获取
 - ✅ 端到端加密（服务器无法查看明文）
-- ✅ 兼容常见的 Bitwarden 官方客户端
+- ✅ 无感更新，零停机
 
 ## 测试情况：
 - ✅ Windows 客户端（v2026.1.0）
@@ -34,8 +34,9 @@ English：[`README_EN.md`](./README_EN.md)
 
 **部署步骤：**
 
-1. [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shuaiplus/nodewarden)
-2. 打开部署后生成的链接，并根据网页提示完成后续操作。
+1. 先在右上角fork此项目（若后续不需要更新，可不fork）
+2. [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shuaiplus/nodewarden)
+3. 打开部署后生成的链接，并根据网页提示完成后续操作。
 
 ---
 

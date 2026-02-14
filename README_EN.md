@@ -20,7 +20,7 @@ A **Bitwarden-compatible** server that runs on **Cloudflare Workers**.
 - ✅ Import / export
 - ✅ Website icons
 - ✅ End-to-end encryption (the server can’t see plaintext)
-- ✅ Compatible with common Bitwarden official clients
+- ✅ Seamless updates, zero downtime
 
 ## Tested clients / platforms
 
@@ -38,8 +38,9 @@ A **Bitwarden-compatible** server that runs on **Cloudflare Workers**.
 
 **Deploy steps:**
 
-1. [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shuaiplus/nodewarden)
-2. Open the generated service URL and follow the on-page instructions.
+1. Fork this project  (you don't need to fork it if you don't need to update it later).
+2. [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/shuaiplus/nodewarden)
+3. Open the generated service URL and follow the on-page instructions.
 
 
 ## Local development
