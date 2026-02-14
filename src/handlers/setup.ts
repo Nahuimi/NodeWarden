@@ -1,8 +1,9 @@
 import { Env, DEFAULT_DEV_SECRET } from '../types';
 import { StorageService } from '../services/storage';
-import { jsonResponse, htmlResponse, errorResponse } from '../utils/response';
-import { renderJwtSecretWarningPage, JwtSecretState } from './setupPages';
+import { jsonResponse, errorResponse } from '../utils/response';
 import { handleRegisterPage } from './setupRegisterPage';
+
+type JwtSecretState = 'missing' | 'default' | 'too_short';
 
 function getJwtSecretState(env: Env): JwtSecretState | null {
   const secret = (env.JWT_SECRET || '').trim();
@@ -21,14 +22,9 @@ export async function handleSetupPage(request: Request, env: Env): Promise<Respo
     return new Response(null, { status: 404 });
   }
 
-  // Guard: require a strong JWT_SECRET before allowing setup/registration.
+  // 引导页内会处理 JWT_SECRET 检测与分流（坏密钥停留在修复步骤）。
   const jwtState = getJwtSecretState(env);
-  if (jwtState) {
-    return htmlResponse(renderJwtSecretWarningPage(request, jwtState), 200);
-  }
-
-  // Serve the registration/setup UI (split into a dedicated module).
-  return handleRegisterPage(request, env);
+  return handleRegisterPage(request, env, jwtState);
 }
 
 // GET /setup/status

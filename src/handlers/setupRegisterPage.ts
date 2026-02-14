@@ -2,9 +2,12 @@ import { Env } from '../types';
 import { StorageService } from '../services/storage';
 import { htmlResponse } from '../utils/response';
 
-// Registration/setup page HTML (single-file, no external assets)
-// Split out from the old monolithic `setup.ts` as requested.
-const registerPageHTML = `<!DOCTYPE html>
+type JwtSecretState = 'missing' | 'default' | 'too_short';
+
+function renderRegisterPageHTML(jwtState: JwtSecretState | null): string {
+  const jwtStateJson = JSON.stringify(jwtState);
+
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -19,7 +22,6 @@ const registerPageHTML = `<!DOCTYPE html>
       --text: #101828;
       --muted: #475467;
       --muted2: #667085;
-      --accent: #111418;
       --danger: #b42318;
       --ok: #027a48;
       --shadow: 0 16px 44px rgba(16, 24, 40, 0.08);
@@ -39,20 +41,48 @@ const registerPageHTML = `<!DOCTYPE html>
       justify-content: center;
       padding: 40px 24px;
     }
-    .shell { width: min(920px, 100%); }
+
+    .shell { width: min(980px, 100%); }
+
     .panel {
       padding: 40px;
       border: 1px solid var(--border);
       background: var(--card);
       border-radius: var(--radius);
       box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      position: relative;
     }
+
+    .lang-toggle {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      height: 32px;
+      min-width: 62px;
+      padding: 0 10px;
+      border-radius: 10px;
+      border: 1px solid #d5dae1;
+      background: #ffffff;
+      color: #111418;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .lang-toggle:hover { background: #f8fafc; }
+
     .top {
       display: flex;
       gap: 14px;
       align-items: center;
       margin-bottom: 14px;
     }
+
     .mark {
       width: 60px;
       height: 60px;
@@ -70,16 +100,40 @@ const registerPageHTML = `<!DOCTYPE html>
       text-transform: uppercase;
       user-select: none;
     }
+
     .title { display: flex; flex-direction: column; gap: 4px; }
     .title h1 { font-size: 30px; margin: 0; letter-spacing: -0.6px; }
     .title p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; }
 
-    h2 { font-size: 22px; margin: 20px 0 14px 0; letter-spacing: -0.3px; }
+    h2 { font-size: 22px; margin: 10px 0 14px 0; letter-spacing: -0.3px; }
+    h3 { font-size: 17px; margin: 0 0 10px 0; color: #1d2939; }
+    .lead { margin: 0; color: #344054; font-size: 16px; line-height: 1.75; }
+
+    .step-container {
+      position: relative;
+      height: 442px;
+      overflow: hidden;
+    }
+    .step {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: translateX(10px);
+      pointer-events: none;
+      transition: opacity 170ms ease, transform 170ms ease;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+    .step.active {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+    }
 
     .message {
       display: none;
       border-radius: 12px;
-      padding: 14px 14px;
+      padding: 14px;
       margin: 0 0 12px 0;
       font-size: 15px;
       line-height: 1.45;
@@ -99,8 +153,18 @@ const registerPageHTML = `<!DOCTYPE html>
       color: var(--ok);
     }
 
+    .kv {
+      border-radius: var(--radius2);
+      border: 1px solid var(--border);
+      background: #fafbfc;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+    .kv p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--muted); }
+    .kv ul, .kv ol { margin: 8px 0 0 18px; padding: 0; color: var(--muted); line-height: 1.7; }
+
     .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    @media (max-width: 540px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
 
     .field { display: flex; flex-direction: column; gap: 7px; }
     label { font-size: 14px; color: var(--muted); letter-spacing: 0.1px; }
@@ -120,36 +184,98 @@ const registerPageHTML = `<!DOCTYPE html>
       border-color: #111418;
       box-shadow: 0 0 0 5px rgba(17, 20, 24, 0.08);
     }
-    .hint { margin: 0; color: var(--muted2); font-size: 14px; line-height: 1.6; }
 
-    .actions { margin-top: 16px; display: flex; gap: 10px; align-items: center; }
-    .primary {
-      width: 100%;
-      height: 52px;
+    .hint { margin: 0; color: var(--muted2); font-size: 14px; line-height: 1.6; }
+    .muted { color: var(--muted); }
+
+    .compat-wrap {
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 10px 12px;
+    }
+    .compat-title {
+      margin: 0 0 8px 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: #344054;
+      letter-spacing: 0.1px;
+    }
+    .compat-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .compat-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 30px;
+      padding: 0 10px;
+      border-radius: 999px;
+      border: 1px solid #d5dae1;
+      background: #f8fafc;
+      font-size: 13px;
+      color: #1d2939;
+      line-height: 1;
+      white-space: nowrap;
+    }
+    .compat-chip.ok {
+      border-color: #abefc6;
+      background: #f0fdf4;
+      color: #027a48;
+    }
+    .compat-chip.na {
+      border-color: #e4e7ec;
+      background: #f9fafb;
+      color: #667085;
+    }
+    .compat-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.9;
+    }
+
+    .btn {
+      height: 46px;
+      padding: 0 16px;
       border-radius: 14px;
-      border: 1px solid #111418;
+      border: 1px solid #d5dae1;
+      background: #ffffff;
+      color: #111418;
+      font-weight: 700;
+      font-size: 15px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn.primary {
+      border-color: #111418;
       background: #111418;
       color: #ffffff;
-      font-weight: 700;
-      font-size: 16px;
-      letter-spacing: 0.1px;
-      cursor: pointer;
-      transition: transform 120ms ease, filter 120ms ease;
     }
-    .primary:hover { filter: brightness(1.03); }
-    .primary:active { transform: translateY(1px) scale(0.99); }
-    .primary:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
-    .sideCard { display: flex; flex-direction: column; gap: 12px; }
-    .kv {
-      border-radius: var(--radius2);
-      border: 1px solid var(--border);
-      background: #fafbfc;
-      padding: 18px;
-      margin-bottom: 14px;
+    .mode-tabs { display: inline-flex; border: 1px solid #d5dae1; border-radius: 12px; overflow: hidden; }
+    .mode-tab {
+      border: none;
+      background: #fff;
+      color: #111418;
+      padding: 9px 12px;
+      cursor: pointer;
+      font-weight: 700;
+      font-size: 14px;
     }
-    .kv h3 { margin: 0 0 10px 0; font-size: 17px; color: #1d2939; }
-    .kv p { margin: 0; font-size: 15px; line-height: 1.65; color: var(--muted); }
+    .mode-tab.active { background: #111418; color: #fff; }
+
+    .mode-panel { display: none; margin-top: 12px; }
+    .mode-panel.active { display: block; }
 
     .server {
       margin-top: 10px;
@@ -162,11 +288,45 @@ const registerPageHTML = `<!DOCTYPE html>
       word-break: break-all;
       color: #111418;
     }
+
+    .flow-bottom {
+      margin-top: 14px;
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .flow-actions { display: flex; align-items: center; gap: 8px; width: 132px; }
+    .flow-actions .btn { width: 120px; padding: 0; }
+
+    .dots {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      min-height: 26px;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: #cfd5de;
+      transition: all 120ms ease;
+    }
+    .dot.active {
+      width: 24px;
+      height: 10px;
+      border-radius: 999px;
+      background: #111418;
+    }
+
     a { color: #175cd3; text-decoration: none; }
     a:hover { text-decoration: underline; }
+
     .footer {
-      margin-top: 24px;
-      padding-top: 18px;
+      margin-top: 15px;
+      padding-top: 10px;
       border-top: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
@@ -175,12 +335,60 @@ const registerPageHTML = `<!DOCTYPE html>
       font-size: 14px;
       color: var(--muted2);
     }
-    .muted { color: var(--muted); }
+
+    .modal-mask {
+      position: fixed;
+      inset: 0;
+      background: rgba(16, 24, 40, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+      padding: 20px;
+    }
+    .modal-mask.show { display: flex; }
+    .modal {
+      width: min(520px, 100%);
+      border-radius: 16px;
+      border: 1px solid var(--border);
+      background: #ffffff;
+      box-shadow: 0 24px 56px rgba(16, 24, 40, 0.18);
+      padding: 20px;
+    }
+    .modal h3 {
+      margin: 0 0 8px 0;
+      font-size: 18px;
+      color: #101828;
+    }
+    .modal p {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.7;
+      color: #475467;
+    }
+    .modal-warn {
+      margin-top: 10px;
+      border: 1px solid #fecdca;
+      background: #fff6f5;
+      color: #b42318;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+    .modal-actions {
+      margin-top: 16px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
   <div class="shell">
     <aside class="panel">
+      <button id="langToggle" class="lang-toggle" type="button" onclick="toggleLanguage()">EN</button>
+
       <div class="top">
         <div class="mark" aria-label="NodeWarden">NW</div>
         <div class="title">
@@ -189,97 +397,250 @@ const registerPageHTML = `<!DOCTYPE html>
         </div>
       </div>
 
-      <div class="muted" id="t_intro" style="font-size: 16px; line-height: 1.7;">
-        Create your first account to finish setup. Then use any official Bitwarden client to sign in.
-      </div>
-
-      <h2 id="t_setup">Setup</h2>
-
       <div id="message" class="message"></div>
 
-      <div id="setup-form">
-        <form id="form" onsubmit="handleSubmit(event)">
-          <div class="grid">
-            <div class="field">
-              <label for="name" id="t_name_label">Name</label>
-              <input type="text" id="name" name="name" required placeholder="Your name">
+      <div class="step-container">
+      <section id="step1" class="step active">
+        <h2 id="t_s1_title">Welcome</h2>
+        <p class="lead" id="t_s1_desc"></p>
+        <div class="kv" style="margin-top:14px;">
+          <h3 id="t_s1_adv_title">Why NodeWarden</h3>
+          <ul>
+            <li id="t_s1_adv_1"></li>
+            <li id="t_s1_adv_2"></li>
+            <li id="t_s1_adv_3"></li>
+          </ul>
+        </div>
+
+        <div class="kv">
+          <h3 id="t_s1_compat_title"></h3>
+          <div class="compat-grid">
+            <span class="compat-chip ok"><span class="compat-dot"></span><span id="t_s1_compat_win"></span></span>
+            <span class="compat-chip ok"><span class="compat-dot"></span><span id="t_s1_compat_android"></span></span>
+            <span class="compat-chip ok"><span class="compat-dot"></span><span id="t_s1_compat_ios"></span></span>
+            <span class="compat-chip ok"><span class="compat-dot"></span><span id="t_s1_compat_ext"></span></span>
+            <span class="compat-chip na"><span class="compat-dot"></span><span id="t_s1_compat_other"></span></span>
+          </div>
+        </div>
+      </section>
+
+      <section id="step2" class="step">
+        <h2 id="t_s2_title">JWT secret check</h2>
+        <p class="lead" id="t_s2_desc"></p>
+
+        <div class="grid" style="margin-top:14px;">
+          <div class="kv">
+            <h3 id="t_s2_fix_title">Fix steps</h3>
+            <div id="t_s2_fix_text"></div>
+          </div>
+          <div class="kv">
+            <h3 id="t_s2_gen_title">Random JWT_SECRET</h3>
+            <p id="t_s2_gen_desc"></p>
+            <div class="server" id="secret"></div>
+            <div style="height:10px"></div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn primary" type="button" id="refreshSecretBtn" onclick="refreshSecret()">Refresh</button>
+              <button class="btn" type="button" id="copySecretBtn" onclick="copySecret()">Copy</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="step3" class="step">
+        <h2 id="t_s3_title">Sync setup</h2>
+        <p class="lead" id="t_s3_desc"></p>
+
+        <div class="kv" style="margin-top:14px;">
+          <h3 id="t_s3_common_title">Common required steps</h3>
+          <ol>
+            <li id="t_s3_common_1"></li>
+            <li id="t_s3_common_2"></li>
+            <li id="t_s3_common_3"></li>
+          </ol>
+        </div>
+
+        <div class="kv">
+          <div class="mode-tabs">
+            <button class="mode-tab active" id="manualTab" onclick="setSyncMode('manual')">Manual sync</button>
+            <button class="mode-tab" id="autoTab" onclick="setSyncMode('auto')">Auto sync</button>
+          </div>
+
+          <div id="manualPanel" class="mode-panel active">
+            <p id="t_s3_manual_text"></p>
+            <ol>
+              <li id="t_s3_manual_step1"></li>
+              <li id="t_s3_manual_step2"></li>
+            </ol>
+          </div>
+
+          <div id="autoPanel" class="mode-panel">
+            <p id="t_s3_auto_text"></p>
+            <ol>
+              <li id="t_s3_auto_step1"></li>
+              <li id="t_s3_auto_step2"></li>
+              <li id="t_s3_auto_step3"></li>
+            </ol>
+          </div>
+        </div>
+      </section>
+
+      <section id="step4" class="step">
+        <h2 id="t_s4_title">Final step</h2>
+        <p class="lead" id="t_s4_desc"></p>
+
+        <div id="setup-form">
+          <form id="form" onsubmit="handleSubmit(event)">
+            <div class="grid">
+              <div class="field">
+                <label for="name" id="t_name_label">Name</label>
+                <input type="text" id="name" name="name" required placeholder="Your name">
+              </div>
+              <div class="field">
+                <label for="email" id="t_email_label">Email</label>
+                <input type="email" id="email" name="email" required placeholder="you@example.com" autocomplete="email">
+              </div>
+            </div>
+
+            <div style="height: 10px"></div>
             <div class="field">
-              <label for="email" id="t_email_label">Email</label>
-              <input type="email" id="email" name="email" required placeholder="you@example.com" autocomplete="email">
+              <label for="password" id="t_pw_label">Master password</label>
+              <input type="password" id="password" name="password" required minlength="12" placeholder="At least 12 characters" autocomplete="new-password">
+              <p class="hint" id="t_pw_hint">Choose a strong password you can remember. The server cannot recover it.</p>
+            </div>
+
+            <div style="height: 10px"></div>
+            <div class="field">
+              <label for="confirmPassword" id="t_pw2_label">Confirm password</label>
+              <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Confirm password" autocomplete="new-password">
+            </div>
+
+            <div style="height:12px"></div>
+            <button type="submit" id="submitBtn" class="btn primary" style="width:100%;height:52px;">Create account</button>
+          </form>
+        </div>
+
+        <div id="registered-view" style="display:none;">
+          <div class="kv">
+            <h3 id="t_done_title">Setup complete</h3>
+            <p id="t_done_desc">Your server is ready. Configure your Bitwarden client with this server URL:</p>
+            <div class="server" id="serverUrl"></div>
+          </div>
+          <div class="kv">
+            <h3 id="t_hide_title">Hide setup page</h3>
+            <p id="t_hide_desc"></p>
+            <div style="margin-top:10px;">
+              <button type="button" id="hideBtn" class="btn primary" onclick="openHideConfirmModal()">Hide setup page</button>
             </div>
           </div>
-
-          <div style="height: 10px"></div>
-          <div class="field">
-            <label for="password" id="t_pw_label">Master password</label>
-            <input type="password" id="password" name="password" required minlength="12" placeholder="At least 12 characters" autocomplete="new-password">
-            <p class="hint" id="t_pw_hint">Choose a strong password you can remember. The server cannot recover it.</p>
-          </div>
-
-          <div style="height: 10px"></div>
-          <div class="field">
-            <label for="confirmPassword" id="t_pw2_label">Confirm password</label>
-            <input type="password" id="confirmPassword" name="confirmPassword" required placeholder="Confirm password" autocomplete="new-password">
-          </div>
-
-          <div class="actions">
-            <button type="submit" id="submitBtn" class="primary">Create account</button>
-          </div>
-        </form>
-      </div>
-
-      <div id="registered-view" class="sideCard" style="display: none;">
-        <div class="kv">
-          <h3 id="t_done_title">Setup complete</h3>
-          <p id="t_done_desc">Your server is ready. Configure your Bitwarden client with this server URL:</p>
-          <div class="server" id="serverUrl"></div>
         </div>
-
-        <div class="kv">
-          <h3 id="t_important">Important</h3>
-          <p id="t_limitations">
-            This project is designed for a single user. You cannot add new users. Changing the master password is not supported.
-            If you forget it, you must redeploy and register again.
-          </p>
-        </div>
-
-        <div class="kv">
-          <h3 id="t_hide_title">Hide setup page</h3>
-          <p id="t_hide_desc">After hiding, this setup page will return 404 for everyone. Your vault will keep working.</p>
-          <div class="actions">
-            <button type="button" id="hideBtn" class="primary" onclick="disableSetupPage()">Hide setup page</button>
-          </div>
-        </div>
+      </section>
       </div>
 
       <div class="footer">
-        <div>
-          <span class="muted" id="t_by">By</span>
-          <a href="https://shuai.plus" target="_blank" rel="noreferrer">shuaiplus</a>
-        </div>
-        <div>
-          <a href="https://github.com/shuaiplus/nodewarden" target="_blank" rel="noreferrer">GitHub</a>
-        </div>
+        <div><span class="muted" id="t_by">By</span> <a href="https://shuai.plus" target="_blank" rel="noreferrer">shuaiplus</a></div>
+        <div><a href="https://github.com/shuaiplus/nodewarden" target="_blank" rel="noreferrer">GitHub</a></div>
       </div>
     </aside>
+
+    <div class="flow-bottom">
+      <div class="flow-actions">
+        <button id="prevBtn" class="btn" type="button">Previous</button>
+      </div>
+      <div class="dots" id="dots">
+        <span class="dot active" data-step="1"></span>
+        <span class="dot" data-step="2"></span>
+        <span class="dot" data-step="3"></span>
+        <span class="dot" data-step="4"></span>
+      </div>
+      <div class="flow-actions" style="justify-content:flex-end;">
+        <button id="nextBtn" class="btn primary" type="button">Next</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="hideModal" class="modal-mask" role="dialog" aria-modal="true" aria-labelledby="hideModalTitle" aria-describedby="hideModalDesc">
+    <div class="modal">
+      <h3 id="hideModalTitle"></h3>
+      <p id="hideModalDesc"></p>
+      <div class="modal-warn" id="hideModalWarn"></div>
+      <div class="modal-actions">
+        <button id="hideModalCancel" class="btn" type="button" onclick="closeHideConfirmModal()"></button>
+        <button id="hideModalConfirm" class="btn primary" type="button" onclick="disableSetupPage()"></button>
+      </div>
+    </div>
   </div>
 
   <script>
+    const JWT_STATE = ${jwtStateJson};
+
     let isRegistered = false;
+    let currentStep = 1;
+    let currentLang = ((navigator.language || '').toLowerCase().startsWith('zh')) ? 'zh' : 'en';
 
     function isChinese() {
-      const lang = (navigator.language || '').toLowerCase();
-      return lang.startsWith('zh');
+      return currentLang === 'zh';
+    }
+
+    function toggleLanguage() {
+      currentLang = isChinese() ? 'en' : 'zh';
+      applyI18n();
     }
 
     function t(key) {
       const zh = {
         app: 'NodeWarden',
-  tag: '部署在 Cloudflare Workers 上的 Bitwarden 兼容服务端。',
-        intro: '创建第一个账号完成初始化，然后用任意 Bitwarden 官方客户端登录。',
+        tag: '部署在 Cloudflare Workers 上的 Bitwarden 兼容服务端。',
         by: '作者',
-        setup: '初始化',
+
+        s1Title: '恭喜你，NodeWarden 部署成功',
+        s1Desc: '这是一个无需自建服务器的 Bitwarden 第三方服务端：部署快、维护轻、可用官方客户端直接连接。点击右下角“下一步”开始检测。',
+        s1AdvTitle: '核心优势',
+        s1Adv1: '无需 VPS，直接运行在 Cloudflare Workers',
+        s1Adv2: '兼容 Bitwarden 官方客户端（桌面/移动端/浏览器插件）',
+        s1Adv3: '单用户场景简单稳定，日常维护成本低',
+        s1CompatTitle: '已完美适配',
+        s1CompatWin: 'Windows 客户端',
+        s1CompatAndroid: '安卓客户端',
+        s1CompatIos: 'iOS 客户端',
+        s1CompatExt: '浏览器扩展',
+        s1CompatOther: '其他：未测试',
+
+        s2Title: '环境检测：JWT_SECRET',
+        s2DescGood: 'JWT_SECRET 检测通过。若你当前不是使用高强度随机密钥，建议改用右侧生成器生成后再保存。',
+        s2DescMissing: '检测到 JWT_SECRET 未配置，先添加后再继续。',
+        s2DescDefault: '检测到 JWT_SECRET 使用默认值，先更换后再继续。',
+        s2DescShort: '检测到 JWT_SECRET 长度小于 32，先更换后再继续。',
+        s2FixTitle: '处理步骤（添加 / 更换）',
+        s2FixAddTitle: '当前是“未配置”，请添加：',
+        s2FixReplaceTitle: '当前是“默认值或长度不足”，请更换：',
+        s2FixStep1: '进入 Cloudflare 控制台 → Workers 和 Pages → 你的 nodewarden 服务。',
+        s2FixStep2Add: '打开 设置 → 变量和机密，新增 JWT_SECRET（类型选“密钥”）。',
+        s2FixStep2Replace: '打开 设置 → 变量和机密，找到 JWT_SECRET 并编辑为新值。',
+        s2FixStep3: '保存并等待服务重新部署完成。',
+        s2FixStep4: '设置完后回到本页，刷新页面继续。',
+        s2GenTitle: '随机密钥生成器',
+        s2GenDesc: '建议至少 32 位，推荐 64 位。复制后粘贴到 JWT_SECRET。',
+        refresh: '刷新',
+        copy: '复制',
+        copied: '已复制',
+
+        s3Title: '同步策略（可跳过）',
+        s3CommonTitle: '共同前置步骤',
+        s3Common1: '如果还没 fork，请先 fork 本项目到你自己的 GitHub。',
+        s3Common2: 'Cloudflare 控制台 → Workers 和 Pages → 你的服务 → 设置 → 构建与部署 → 源代码，先解绑当前一键部署仓库。',
+        s3Common3: '在同一位置重新绑定到你自己的 fork 仓库。',
+        manualSync: '手动同步',
+        autoSync: '自动同步',
+        s3ManualText: '手动同步：在 GitHub 网页端一键完成。',
+        s3ManualStep1: '打开你自己的 fork 仓库首页，看到 “This branch is behind” 或可同步提示时，点击 “Sync fork”。',
+        s3ManualStep2: '点击 “Update branch” 完成同步。',
+        s3AutoText: '自动同步：fork 会自动带上同步工作流文件，你只需要开启 Actions。',
+        s3AutoStep1: '进入你的 fork 仓库 → Actions。',
+        s3AutoStep2: '点击 “I understand my workflows, go ahead and enable them”。',
+        s3AutoStep3: '默认每天凌晨 3 点自动同步；需要时可手动点 “Run workflow”。',
+
+        s4Title: '最终：创建账号',
+        s4Desc: '填写信息并创建你的唯一账号，完成初始化。',
         nameLabel: '昵称',
         emailLabel: '邮箱',
         pwLabel: '主密码',
@@ -292,23 +653,83 @@ const registerPageHTML = `<!DOCTYPE html>
         important: '重要提示',
         limitations: '本项目仅支持单用户：不能添加新用户；不支持修改主密码；如果忘记主密码，只能重新部署并重新注册。',
         hideTitle: '隐藏初始化页',
-        hideDesc: '隐藏后，初始化页对任何人都会直接返回 404。你的密码库仍可正常使用。',
+        hideDesc: '隐藏后，初始化页对任何人都会返回 404。你的密码库仍可正常使用。',
         hideBtn: '隐藏初始化页',
         hideWorking: '正在隐藏…',
         hideDone: '已隐藏，此页面将返回 404。',
         hideFailed: '隐藏失败',
         hideConfirm: '确认隐藏初始化页？隐藏后页面将不可访问，但你的密码库不会受影响。',
+        hideModalTitle: '确认隐藏初始化页',
+        hideModalDesc: '隐藏后，初始化页将被永久关闭（返回 404）。你的密码库可继续使用。',
+        hideModalWarn: '此操作不可恢复。若要重新进入初始化流程，只能重新部署。',
+        cancel: '取消',
+        confirmHide: '确认隐藏',
+
+        prev: '上一步',
+        next: '下一步',
+        done: '完成',
+        keyWaitRefresh: '设置后请刷新',
+
         errPwNotMatch: '两次输入的密码不一致',
         errPwTooShort: '密码长度至少 12 位',
         errGeneric: '发生错误：',
         errRegisterFailed: '注册失败',
       };
+
       const en = {
         app: 'NodeWarden',
-  tag: 'Minimal Bitwarden-compatible server on Cloudflare Workers.',
-        intro: 'Create your first account to finish setup. Then use any official Bitwarden client to sign in.',
+        tag: 'Minimal Bitwarden-compatible server on Cloudflare Workers.',
         by: 'By',
-        setup: 'Setup',
+
+        s1Title: 'NodeWarden deployed successfully',
+        s1Desc: 'A Bitwarden-compatible server without managing your own VPS: simple deployment, low maintenance, and official client compatibility. Click Next to start checks.',
+        s1AdvTitle: 'Highlights',
+        s1Adv1: 'No VPS required, runs on Cloudflare Workers',
+        s1Adv2: 'Works with official Bitwarden clients',
+        s1Adv3: 'Simple and stable for single-user setup',
+        s1CompatTitle: 'Fully compatible',
+        s1CompatWin: 'Windows client',
+        s1CompatAndroid: 'Android client',
+        s1CompatIos: 'iOS client',
+        s1CompatExt: 'Browser extension',
+        s1CompatOther: 'Others: not tested',
+
+        s2Title: 'Environment check: JWT_SECRET',
+        s2DescGood: 'JWT_SECRET check passed. If you are not using a strong random secret yet, we still recommend replacing it with one from the generator on the right.',
+        s2DescMissing: 'JWT_SECRET is missing. Add it before continuing.',
+        s2DescDefault: 'JWT_SECRET is default/sample. Replace it before continuing.',
+        s2DescShort: 'JWT_SECRET is shorter than 32 chars. Replace it before continuing.',
+        s2FixTitle: 'Fix steps (add / replace)',
+        s2FixAddTitle: 'Current state is “missing”, add it:',
+        s2FixReplaceTitle: 'Current state is “default or too short”, replace it:',
+        s2FixStep1: 'Open Cloudflare Dashboard → Workers & Pages → your nodewarden service.',
+        s2FixStep2Add: 'Go to Settings → Variables and Secrets, add JWT_SECRET (Secret type).',
+        s2FixStep2Replace: 'Go to Settings → Variables and Secrets, edit JWT_SECRET with a new value.',
+        s2FixStep3: 'Save and wait for redeploy to complete.',
+        s2FixStep4: 'After setting it, come back and refresh this page to continue.',
+        s2GenTitle: 'Random secret generator',
+        s2GenDesc: 'Use 32+ chars (64 recommended). Copy and paste into JWT_SECRET.',
+        refresh: 'Refresh',
+        copy: 'Copy',
+        copied: 'Copied',
+
+        s3Title: 'Sync strategy (optional)',
+        s3CommonTitle: 'Common prerequisites',
+        s3Common1: 'If you have not forked yet, fork this project to your own GitHub first.',
+        s3Common2: 'Cloudflare Dashboard → Workers & Pages → your service → Settings → Builds and deployments → Source code, unbind the current one-click-deploy repo.',
+        s3Common3: 'In the same place, bind your own fork repository.',
+        manualSync: 'Manual sync',
+        autoSync: 'Auto sync',
+        s3ManualText: 'Manual sync: one click in GitHub web UI.',
+        s3ManualStep1: 'Open your fork repo home page. When you see update hint like “This branch is behind”, click “Sync fork”.',
+        s3ManualStep2: 'Click “Update branch” to finish sync.',
+        s3AutoText: 'Auto sync: your fork already includes the workflow file; you only need to enable Actions.',
+        s3AutoStep1: 'Go to your fork repository → Actions.',
+        s3AutoStep2: 'Click “I understand my workflows, go ahead and enable them”.',
+        s3AutoStep3: 'It runs daily at 03:00 by default; you can also click “Run workflow”.',
+
+        s4Title: 'Final: create account',
+        s4Desc: 'Create your single user account to finish setup.',
         nameLabel: 'Name',
         emailLabel: 'Email',
         pwLabel: 'Master password',
@@ -317,47 +738,220 @@ const registerPageHTML = `<!DOCTYPE html>
         create: 'Create account',
         creating: 'Creating…',
         doneTitle: 'Setup complete',
-        doneDesc: 'Your server is ready. Configure your Bitwarden client with this server URL:',
+        doneDesc: 'Your server is ready. Use this URL in Bitwarden clients:',
         important: 'Important',
-        limitations: 'Single user only: you cannot add new users. Changing the master password is not supported. If you forget it, redeploy and register again.',
+        limitations: 'Single user only: no additional users, no master password change. If forgotten, redeploy and register again.',
         hideTitle: 'Hide setup page',
-        hideDesc: 'After hiding, this setup page will return 404 for everyone. Your vault will keep working.',
+        hideDesc: 'After hiding, this page returns 404 for everyone. Vault still works.',
         hideBtn: 'Hide setup page',
         hideWorking: 'Hiding…',
         hideDone: 'Hidden. This page will now return 404.',
         hideFailed: 'Failed to hide setup page',
-        hideConfirm: 'Hide the setup page? It will no longer be accessible, but your vault will keep working.',
+        hideConfirm: 'Hide setup page? It will no longer be accessible, but vault keeps working.',
+        hideModalTitle: 'Confirm hide setup page',
+        hideModalDesc: 'After hiding, this setup page is permanently closed (returns 404). Your vault keeps working.',
+        hideModalWarn: 'This action cannot be undone. Re-entering setup requires redeploy.',
+        cancel: 'Cancel',
+        confirmHide: 'Confirm hide',
+
+        prev: 'Previous',
+        next: 'Next',
+        done: 'Done',
+        keyWaitRefresh: 'After setting it, refresh this page',
+
         errPwNotMatch: 'Passwords do not match',
         errPwTooShort: 'Password must be at least 12 characters',
         errGeneric: 'An error occurred: ',
         errRegisterFailed: 'Registration failed',
       };
-      return (isChinese() ? zh : en)[key];
+
+      return (isChinese() ? zh : en)[key] || key;
+    }
+
+    function setText(id, value) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = value;
+    }
+
+    function renderJwtFixSteps() {
+      const el = document.getElementById('t_s2_fix_text');
+      if (!el) return;
+      if (!JWT_STATE) {
+        el.innerHTML = isChinese()
+          ? '<div style="margin-bottom:8px;font-weight:700;color:#1d2939;">当前状态：已通过</div><ol><li>你可以继续下一步，不影响使用。</li><li>如果当前密钥不是强随机值，建议复制右侧生成器的 64 位密钥。</li><li>到 Cloudflare 控制台 → Workers 和 Pages → 你的服务 → 设置 → 变量和机密，更新 JWT_SECRET。</li><li>保存并等待重新部署完成，然后刷新本页确认。</li></ol>'
+          : '<div style="margin-bottom:8px;font-weight:700;color:#1d2939;">Current status: passed</div><ol><li>You can continue directly.</li><li>If your current secret is not a strong random one, copy a 64-char secret from the generator.</li><li>Go to Cloudflare Dashboard → Workers & Pages → your service → Settings → Variables and Secrets, then update JWT_SECRET.</li><li>Save, wait for redeploy, and refresh this page to confirm.</li></ol>';
+        return;
+      }
+      const isAdd = JWT_STATE === 'missing';
+      const title = isAdd ? t('s2FixAddTitle') : t('s2FixReplaceTitle');
+      const step2 = isAdd ? t('s2FixStep2Add') : t('s2FixStep2Replace');
+      el.innerHTML = '<div style="margin-bottom:8px;font-weight:700;color:#1d2939;">' + title + '</div>'
+        + '<ol>'
+        + '<li>' + t('s2FixStep1') + '</li>'
+        + '<li>' + step2 + '</li>'
+        + '<li>' + t('s2FixStep3') + '</li>'
+        + '<li>' + t('s2FixStep4') + '</li>'
+        + '</ol>';
     }
 
     function applyI18n() {
       document.documentElement.lang = isChinese() ? 'zh-CN' : 'en';
+      setText('t_app', t('app'));
+      setText('t_tag', t('tag'));
+      setText('t_by', t('by'));
 
-      document.getElementById('t_app').textContent = t('app');
-      document.getElementById('t_tag').textContent = t('tag');
-      document.getElementById('t_intro').textContent = t('intro');
-      document.getElementById('t_by').textContent = t('by');
-      document.getElementById('t_setup').textContent = t('setup');
+      setText('t_s1_title', t('s1Title'));
+      setText('t_s1_desc', t('s1Desc'));
+      setText('t_s1_adv_title', t('s1AdvTitle'));
+      setText('t_s1_adv_1', t('s1Adv1'));
+      setText('t_s1_adv_2', t('s1Adv2'));
+      setText('t_s1_adv_3', t('s1Adv3'));
+      setText('t_s1_compat_title', t('s1CompatTitle'));
+      setText('t_s1_compat_win', t('s1CompatWin'));
+      setText('t_s1_compat_android', t('s1CompatAndroid'));
+      setText('t_s1_compat_ios', t('s1CompatIos'));
+      setText('t_s1_compat_ext', t('s1CompatExt'));
+      setText('t_s1_compat_other', t('s1CompatOther'));
 
-      document.getElementById('t_name_label').textContent = t('nameLabel');
-      document.getElementById('t_email_label').textContent = t('emailLabel');
-      document.getElementById('t_pw_label').textContent = t('pwLabel');
-      document.getElementById('t_pw_hint').textContent = t('pwHint');
-      document.getElementById('t_pw2_label').textContent = t('pw2Label');
-      document.getElementById('submitBtn').textContent = t('create');
+      setText('t_s2_title', t('s2Title'));
+      setText('t_s2_fix_title', t('s2FixTitle'));
+      renderJwtFixSteps();
+      setText('t_s2_gen_title', t('s2GenTitle'));
+      setText('t_s2_gen_desc', t('s2GenDesc'));
+      setText('refreshSecretBtn', t('refresh'));
+      setText('copySecretBtn', t('copy'));
 
-      document.getElementById('t_done_title').textContent = t('doneTitle');
-      document.getElementById('t_done_desc').textContent = t('doneDesc');
-      document.getElementById('t_important').textContent = t('important');
-      document.getElementById('t_limitations').textContent = t('limitations');
-      document.getElementById('t_hide_title').textContent = t('hideTitle');
-      document.getElementById('t_hide_desc').textContent = t('hideDesc');
-      document.getElementById('hideBtn').textContent = t('hideBtn');
+      setText('t_s3_title', t('s3Title'));
+      setText('t_s3_common_title', t('s3CommonTitle'));
+      setText('t_s3_common_1', t('s3Common1'));
+      setText('t_s3_common_2', t('s3Common2'));
+      setText('t_s3_common_3', t('s3Common3'));
+      setText('manualTab', t('manualSync'));
+      setText('autoTab', t('autoSync'));
+      setText('t_s3_manual_text', t('s3ManualText'));
+      setText('t_s3_manual_step1', t('s3ManualStep1'));
+      setText('t_s3_manual_step2', t('s3ManualStep2'));
+      setText('t_s3_auto_text', t('s3AutoText'));
+      setText('t_s3_auto_step1', t('s3AutoStep1'));
+      setText('t_s3_auto_step2', t('s3AutoStep2'));
+      setText('t_s3_auto_step3', t('s3AutoStep3'));
+
+      setText('t_s4_title', t('s4Title'));
+      setText('t_s4_desc', t('s4Desc'));
+      setText('t_name_label', t('nameLabel'));
+      setText('t_email_label', t('emailLabel'));
+      setText('t_pw_label', t('pwLabel'));
+      setText('t_pw_hint', t('pwHint'));
+      setText('t_pw2_label', t('pw2Label'));
+      setText('submitBtn', t('create'));
+      setText('t_done_title', t('doneTitle'));
+      setText('t_done_desc', t('doneDesc'));
+      setText('t_important', t('important'));
+      setText('t_limitations', t('limitations'));
+      setText('t_hide_title', t('hideTitle'));
+      setText('t_hide_desc', t('hideDesc'));
+      setText('hideBtn', t('hideBtn'));
+      setText('hideModalTitle', t('hideModalTitle'));
+      setText('hideModalDesc', t('hideModalDesc'));
+      setText('hideModalWarn', t('hideModalWarn'));
+      setText('hideModalCancel', t('cancel'));
+      setText('hideModalConfirm', t('confirmHide'));
+
+      setText('prevBtn', t('prev'));
+      setText('nextBtn', t('next'));
+      setText('langToggle', isChinese() ? 'EN' : '中文');
+
+      const desc = document.getElementById('t_s2_desc');
+      if (desc) {
+        if (!JWT_STATE) desc.textContent = t('s2DescGood');
+        else if (JWT_STATE === 'missing') desc.textContent = t('s2DescMissing');
+        else if (JWT_STATE === 'default') desc.textContent = t('s2DescDefault');
+        else desc.textContent = t('s2DescShort');
+      }
+    }
+
+    function setSyncMode(mode) {
+      const manualTab = document.getElementById('manualTab');
+      const autoTab = document.getElementById('autoTab');
+      const manualPanel = document.getElementById('manualPanel');
+      const autoPanel = document.getElementById('autoPanel');
+      if (!manualTab || !autoTab || !manualPanel || !autoPanel) return;
+      const isManual = mode === 'manual';
+      manualTab.classList.toggle('active', isManual);
+      autoTab.classList.toggle('active', !isManual);
+      manualPanel.classList.toggle('active', isManual);
+      autoPanel.classList.toggle('active', !isManual);
+    }
+
+    function refreshSecret() {
+      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+      const bytes = new Uint8Array(64);
+      crypto.getRandomValues(bytes);
+      let out = '';
+      for (let i = 0; i < bytes.length; i++) out += chars[bytes[i] % chars.length];
+      const el = document.getElementById('secret');
+      if (el) el.textContent = out;
+    }
+
+    async function copySecret() {
+      const el = document.getElementById('secret');
+      if (!el) return;
+      const s = el.textContent || '';
+      try {
+        await navigator.clipboard.writeText(s);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = s;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      const btn = document.getElementById('copySecretBtn');
+      if (btn) {
+        const old = btn.textContent;
+        btn.textContent = t('copied');
+        setTimeout(() => { btn.textContent = old; }, 1000);
+      }
+    }
+
+    function goToStep(targetStep) {
+      // 安全限制：JWT_SECRET 不合规时，只允许访问第 1/2 步。
+      const maxStep = JWT_STATE ? 2 : 4;
+      currentStep = Math.max(1, Math.min(maxStep, targetStep));
+
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById('step' + i);
+        if (el) el.classList.toggle('active', i === currentStep);
+      }
+
+      const dots = document.querySelectorAll('.dot');
+      dots.forEach((dot) => {
+        const step = Number(dot.getAttribute('data-step'));
+        dot.classList.toggle('active', step === currentStep);
+      });
+
+      const prevBtn = document.getElementById('prevBtn');
+      if (prevBtn) prevBtn.style.display = currentStep <= 1 ? 'none' : 'inline-flex';
+
+      const nextBtn = document.getElementById('nextBtn');
+      if (nextBtn) {
+        nextBtn.style.display = currentStep >= 4 ? 'none' : 'inline-flex';
+        if (currentStep === 2 && !!JWT_STATE) {
+          nextBtn.disabled = true;
+          nextBtn.textContent = t('keyWaitRefresh');
+        } else {
+          nextBtn.disabled = false;
+          nextBtn.textContent = t('next');
+        }
+      }
+    }
+
+    function showMessage(text, type) {
+      const msg = document.getElementById('message');
+      if (!msg) return;
+      msg.textContent = text;
+      msg.className = 'message ' + type;
     }
 
     async function checkStatus() {
@@ -365,8 +959,14 @@ const registerPageHTML = `<!DOCTYPE html>
         const res = await fetch('/setup/status');
         const data = await res.json();
         isRegistered = !!data.registered;
-        if (data.registered) {
-          showRegisteredView();
+        if (isRegistered) {
+          if (JWT_STATE) {
+            // 已注册但密钥不安全：只能停留在首页/密钥页，不能直接进入后续页面。
+            goToStep(2);
+          } else {
+            goToStep(4);
+            showRegisteredView();
+          }
         }
       } catch (e) {
         console.error('Failed to check status:', e);
@@ -375,116 +975,80 @@ const registerPageHTML = `<!DOCTYPE html>
 
     function showRegisteredView() {
       isRegistered = true;
-      document.getElementById('setup-form').style.display = 'none';
-      document.getElementById('registered-view').style.display = 'block';
-      document.getElementById('serverUrl').textContent = window.location.origin;
+      const setupForm = document.getElementById('setup-form');
+      const registeredView = document.getElementById('registered-view');
+      const serverUrl = document.getElementById('serverUrl');
+      if (setupForm) setupForm.style.display = 'none';
+      if (registeredView) registeredView.style.display = 'block';
+      if (serverUrl) serverUrl.textContent = window.location.origin;
       showMessage(t('doneTitle'), 'success');
-      const form = document.getElementById('form');
-      if (form) {
-        const fields = form.querySelectorAll('input, button');
-        fields.forEach((el) => {
-          el.disabled = true;
-        });
-      }
+    }
+
+    function openHideConfirmModal() {
+      const modal = document.getElementById('hideModal');
+      if (modal) modal.classList.add('show');
+    }
+
+    function closeHideConfirmModal() {
+      const modal = document.getElementById('hideModal');
+      if (modal) modal.classList.remove('show');
     }
 
     async function disableSetupPage() {
       if (!isRegistered) return;
-      if (!confirm(t('hideConfirm'))) return;
-
+      closeHideConfirmModal();
       const btn = document.getElementById('hideBtn');
       if (btn) {
         btn.disabled = true;
         btn.textContent = t('hideWorking');
       }
-
       try {
         const res = await fetch('/setup/disable', { method: 'POST' });
         const data = await res.json();
         if (res.ok && data.success) {
           showMessage(t('hideDone'), 'success');
-          setTimeout(() => window.location.reload(), 600);
+          setTimeout(() => window.location.reload(), 650);
           return;
         }
         showMessage(data.error || t('hideFailed'), 'error');
-      } catch (e) {
+      } catch {
         showMessage(t('hideFailed'), 'error');
       }
-
       if (btn) {
         btn.disabled = false;
         btn.textContent = t('hideBtn');
       }
     }
 
-    function showMessage(text, type) {
-      const msg = document.getElementById('message');
-      msg.textContent = text;
-      msg.className = 'message ' + type;
-    }
-
     async function pbkdf2(password, salt, iterations, keyLen) {
       const encoder = new TextEncoder();
-      const passwordBytes = (password instanceof Uint8Array)
-        ? password
-        : encoder.encode(password);
-      const saltBytes = (salt instanceof Uint8Array)
-        ? salt
-        : encoder.encode(salt);
-
-      const keyMaterial = await crypto.subtle.importKey(
-        'raw',
-        passwordBytes,
-        'PBKDF2',
-        false,
-        ['deriveBits']
-      );
-
-      const derivedBits = await crypto.subtle.deriveBits(
-        {
-          name: 'PBKDF2',
-          salt: saltBytes,
-          iterations: iterations,
-          hash: 'SHA-256'
-        },
-        keyMaterial,
-        keyLen * 8
-      );
-
+      const passwordBytes = (password instanceof Uint8Array) ? password : encoder.encode(password);
+      const saltBytes = (salt instanceof Uint8Array) ? salt : encoder.encode(salt);
+      const keyMaterial = await crypto.subtle.importKey('raw', passwordBytes, 'PBKDF2', false, ['deriveBits']);
+      const derivedBits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: saltBytes, iterations: iterations, hash: 'SHA-256' }, keyMaterial, keyLen * 8);
       return new Uint8Array(derivedBits);
     }
 
     async function hkdfExpand(prk, info, length) {
       const encoder = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw',
-        prk,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-
+      const key = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
       const infoBytes = encoder.encode(info);
       const result = new Uint8Array(length);
       let prev = new Uint8Array(0);
       let offset = 0;
       let counter = 1;
-
       while (offset < length) {
         const input = new Uint8Array(prev.length + infoBytes.length + 1);
         input.set(prev);
         input.set(infoBytes, prev.length);
         input[input.length - 1] = counter;
-
         const signature = await crypto.subtle.sign('HMAC', key, input);
         prev = new Uint8Array(signature);
-
         const toCopy = Math.min(prev.length, length - offset);
         result.set(prev.slice(0, toCopy), offset);
         offset += toCopy;
         counter++;
       }
-
       return result;
     }
 
@@ -493,32 +1057,13 @@ const registerPageHTML = `<!DOCTYPE html>
     }
 
     async function encryptAesCbc(data, key, iv) {
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        key,
-        { name: 'AES-CBC' },
-        false,
-        ['encrypt']
-      );
-
-      const encrypted = await crypto.subtle.encrypt(
-        { name: 'AES-CBC', iv: iv },
-        cryptoKey,
-        data
-      );
-
+      const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'AES-CBC' }, false, ['encrypt']);
+      const encrypted = await crypto.subtle.encrypt({ name: 'AES-CBC', iv: iv }, cryptoKey, data);
       return new Uint8Array(encrypted);
     }
 
     async function hmacSha256(key, data) {
-      const cryptoKey = await crypto.subtle.importKey(
-        'raw',
-        key,
-        { name: 'HMAC', hash: 'SHA-256' },
-        false,
-        ['sign']
-      );
-
+      const cryptoKey = await crypto.subtle.importKey('raw', key, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
       const signature = await crypto.subtle.sign('HMAC', cryptoKey, data);
       return new Uint8Array(signature);
     }
@@ -530,89 +1075,77 @@ const registerPageHTML = `<!DOCTYPE html>
     async function encryptToBitwardenFormat(data, encKey, macKey) {
       const iv = crypto.getRandomValues(new Uint8Array(16));
       const encrypted = await encryptAesCbc(data, encKey, iv);
-
       const macData = new Uint8Array(iv.length + encrypted.length);
       macData.set(iv);
       macData.set(encrypted, iv.length);
       const mac = await hmacSha256(macKey, macData);
-
       return '2.' + base64Encode(iv) + '|' + base64Encode(encrypted) + '|' + base64Encode(mac);
     }
 
     async function generateRsaKeyPair() {
       const keyPair = await crypto.subtle.generateKey(
-        {
-          name: 'RSA-OAEP',
-          modulusLength: 2048,
-          publicExponent: new Uint8Array([1, 0, 1]),
-          hash: 'SHA-1'
-        },
+        { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-1' },
         true,
         ['encrypt', 'decrypt']
       );
-
       const publicKeySpki = await crypto.subtle.exportKey('spki', keyPair.publicKey);
       const publicKeyB64 = base64Encode(new Uint8Array(publicKeySpki));
-
       const privateKeyPkcs8 = await crypto.subtle.exportKey('pkcs8', keyPair.privateKey);
-      const privateKeyBytes = new Uint8Array(privateKeyPkcs8);
-
-      return {
-        publicKey: publicKeyB64,
-        privateKey: privateKeyBytes
-      };
+      return { publicKey: publicKeyB64, privateKey: new Uint8Array(privateKeyPkcs8) };
     }
 
     async function handleSubmit(event) {
       event.preventDefault();
-
       if (isRegistered) {
-        showMessage(t('doneTitle'), 'success');
+        showRegisteredView();
         return;
       }
 
-      const name = document.getElementById('name').value;
-      const email = document.getElementById('email').value.toLowerCase();
-      const password = document.getElementById('password').value;
-      const confirmPassword = document.getElementById('confirmPassword').value;
+      const nameInput = document.getElementById('name');
+      const emailInput = document.getElementById('email');
+      const passwordInput = document.getElementById('password');
+      const confirmInput = document.getElementById('confirmPassword');
+      const name = nameInput ? nameInput.value : '';
+      const email = emailInput ? emailInput.value.toLowerCase() : '';
+      const password = passwordInput ? passwordInput.value : '';
+      const confirmPassword = confirmInput ? confirmInput.value : '';
 
       if (password !== confirmPassword) {
         showMessage(t('errPwNotMatch'), 'error');
         return;
       }
-
       if (password.length < 12) {
         showMessage(t('errPwTooShort'), 'error');
         return;
       }
 
       const btn = document.getElementById('submitBtn');
-      btn.disabled = true;
-      btn.textContent = t('creating');
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = t('creating');
+      }
 
       try {
         const iterations = 600000;
         const masterKey = await pbkdf2(password, email, iterations, 32);
-
         const masterPasswordHash = await pbkdf2(masterKey, password, 1, 32);
         const masterPasswordHashB64 = base64Encode(masterPasswordHash);
 
         const stretchedKey = await hkdfExpand(masterKey, 'enc', 32);
         const stretchedMacKey = await hkdfExpand(masterKey, 'mac', 32);
-
         const symmetricKey = generateSymmetricKey();
 
         const encryptedKey = await encryptToBitwardenFormat(symmetricKey, stretchedKey, stretchedMacKey);
-
         const rsaKeys = await generateRsaKeyPair();
-
-        const encryptedPrivateKey = await encryptToBitwardenFormat(rsaKeys.privateKey, symmetricKey.slice(0, 32), symmetricKey.slice(32, 64));
+        const encryptedPrivateKey = await encryptToBitwardenFormat(
+          rsaKeys.privateKey,
+          symmetricKey.slice(0, 32),
+          symmetricKey.slice(32, 64)
+        );
 
         const response = await fetch('/api/accounts/register', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             email: email,
             name: name,
@@ -628,33 +1161,72 @@ const registerPageHTML = `<!DOCTYPE html>
         });
 
         const result = await response.json();
-
         if (response.ok && result.success) {
           showRegisteredView();
         } else {
-          showMessage(result.error || result.ErrorModel?.Message || t('errRegisterFailed'), 'error');
-          btn.disabled = false;
-          btn.textContent = t('create');
+          showMessage(result.error || (result.ErrorModel && result.ErrorModel.Message) || t('errRegisterFailed'), 'error');
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = t('create');
+          }
         }
       } catch (error) {
         console.error('Registration error:', error);
         showMessage(t('errGeneric') + (error && error.message ? error.message : String(error)), 'error');
-        btn.disabled = false;
-        btn.textContent = t('create');
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = t('create');
+        }
       }
     }
 
-    applyI18n();
-    checkStatus();
+    function init() {
+      applyI18n();
+      refreshSecret();
+      setSyncMode('manual');
+      goToStep(1);
+      checkStatus();
+
+      const prevBtn = document.getElementById('prevBtn');
+      if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+          if (currentStep <= 1) return;
+          goToStep(currentStep - 1);
+        });
+      }
+
+      const nextBtn = document.getElementById('nextBtn');
+      if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+          if (currentStep === 1) goToStep(2);
+          else if (currentStep === 2) goToStep(3);
+          else if (currentStep === 3) goToStep(4);
+        });
+      }
+
+      const hideModal = document.getElementById('hideModal');
+      if (hideModal) {
+        hideModal.addEventListener('click', (e) => {
+          if (e.target === hideModal) closeHideConfirmModal();
+        });
+      }
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeHideConfirmModal();
+      });
+    }
+
+    init();
   </script>
 </body>
 </html>`;
+}
 
-export async function handleRegisterPage(request: Request, env: Env): Promise<Response> {
+export async function handleRegisterPage(request: Request, env: Env, jwtState: JwtSecretState | null): Promise<Response> {
   const storage = new StorageService(env.DB);
   const disabled = await storage.isSetupDisabled();
   if (disabled) {
     return new Response(null, { status: 404 });
   }
-  return htmlResponse(registerPageHTML);
+  return htmlResponse(renderRegisterPageHTML(jwtState));
 }
